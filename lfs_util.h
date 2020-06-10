@@ -29,7 +29,8 @@
 #include <stdlib.h>
 #endif
 #ifndef LFS_NO_ASSERT
-#include <assert.h>
+//#include <assert.h>
+#include "asserthelper.h"
 #endif
 #if !defined(LFS_NO_DEBUG) || \
         !defined(LFS_NO_WARN) || \
