@@ -230,6 +230,7 @@ static int lfs_bd_prog(lfs_t *lfs,
 }
 
 static int lfs_bd_erase(lfs_t *lfs, lfs_block_t block) {
+    LFS_TRACE("lfs_bd_erase");
     LFS_ASSERT(block < lfs->cfg->block_count);
     int err = lfs->cfg->erase(lfs->cfg, block);
     LFS_ASSERT(err <= 0);
@@ -576,6 +577,7 @@ static lfs_stag_t lfs_dir_getslice(lfs_t *lfs, const lfs_mdir_t *dir,
 
 static lfs_stag_t lfs_dir_get(lfs_t *lfs, const lfs_mdir_t *dir,
         lfs_tag_t gmask, lfs_tag_t gtag, void *buffer) {
+    LFS_TRACE("lfs_dir_get");
     return lfs_dir_getslice(lfs, dir,
             gmask, gtag,
             0, buffer, lfs_tag_size(gtag));
@@ -1027,18 +1029,21 @@ static int lfs_dir_getgstate(lfs_t *lfs, const lfs_mdir_t *dir,
 
 static int lfs_dir_getinfo(lfs_t *lfs, lfs_mdir_t *dir,
         uint16_t id, struct lfs_info *info) {
+    LFS_TRACE("lfs_dir_getinfo");
     if (id == 0x3ff) {
         // special case for root
         strcpy(info->name, "/");
         info->type = LFS_TYPE_DIR;
         return 0;
     }
+    LFS_TRACE("lfs_dir_getinfo");
 
     lfs_stag_t tag = lfs_dir_get(lfs, dir, LFS_MKTAG(0x780, 0x3ff, 0),
             LFS_MKTAG(LFS_TYPE_NAME, id, lfs->name_max+1), info->name);
     if (tag < 0) {
         return (int)tag;
     }
+    LFS_TRACE("lfs_dir_getinfo");
 
     info->type = lfs_tag_type3(tag);
 
@@ -1049,12 +1054,14 @@ static int lfs_dir_getinfo(lfs_t *lfs, lfs_mdir_t *dir,
         return (int)tag;
     }
     lfs_ctz_fromle32(&ctz);
+    LFS_TRACE("lfs_dir_getinfo");
 
     if (lfs_tag_type3(tag) == LFS_TYPE_CTZSTRUCT) {
         info->size = ctz.size;
     } else if (lfs_tag_type3(tag) == LFS_TYPE_INLINESTRUCT) {
         info->size = lfs_tag_size(tag);
     }
+    LFS_TRACE("lfs_dir_getinfo");
 
     return 0;
 }
@@ -1091,7 +1098,7 @@ static int lfs_dir_find_match(void *data,
 
 static lfs_stag_t lfs_dir_find(lfs_t *lfs, lfs_mdir_t *dir,
         const char **path, uint16_t *id) {
-     LFS_TRACE("lfs_dir_find path=%s", *path);
+     LFS_TRACE("lfs_dir_find pathptr=%p id=%p", path, id);
     // we reduce path to a single name if we can find it
     const char *name = *path;
     if (id) {
@@ -1102,9 +1109,10 @@ static lfs_stag_t lfs_dir_find(lfs_t *lfs, lfs_mdir_t *dir,
     lfs_stag_t tag = LFS_MKTAG(LFS_TYPE_DIR, 0x3ff, 0);
     dir->tail[0] = lfs->root[0];
     dir->tail[1] = lfs->root[1];
-
+    
     while (true) {
 nextname:
+        LFS_TRACE("lfs_dir_find (nextname)");
         // skip slashes
         name += strspn(name, "/");
         lfs_size_t namelen = strcspn(name, "/");
@@ -1121,6 +1129,7 @@ nextname:
         lfs_size_t sufflen;
         int depth = 1;
         while (true) {
+            LFS_TRACE("lfs_dir_find (suffloop)");
             suffix += strspn(suffix, "/");
             sufflen = strcspn(suffix, "/");
             if (sufflen == 0) {
@@ -1142,6 +1151,7 @@ nextname:
 
         // found path
         if (name[0] == '\0') {
+            LFS_TRACE("lfs_dir_find -> %d", tag);
             return tag;
         }
 
@@ -1150,6 +1160,7 @@ nextname:
 
         // only continue if we hit a directory
         if (lfs_tag_type3(tag) != LFS_TYPE_DIR) {
+            LFS_TRACE("lfs_dir_find (notdir) -> %d", tag);
             return LFS_ERR_NOTDIR;
         }
 
@@ -1158,6 +1169,7 @@ nextname:
             lfs_stag_t res = lfs_dir_get(lfs, dir, LFS_MKTAG(0x700, 0x3ff, 0),
                     LFS_MKTAG(LFS_TYPE_STRUCT, lfs_tag_id(tag), 8), dir->tail);
             if (res < 0) {
+                LFS_TRACE("lfs_dir_find (getfail) -> %d", tag);
                 return res;
             }
             lfs_pair_fromle32(dir->tail);
@@ -1165,6 +1177,7 @@ nextname:
 
         // find entry matching name
         while (true) {
+            LFS_TRACE("lfs_dir_find (fetchloop)");
             tag = lfs_dir_fetchmatch(lfs, dir, dir->tail,
                     LFS_MKTAG(0x780, 0, 0),
                     LFS_MKTAG(LFS_TYPE_NAME, 0, namelen),
@@ -1173,6 +1186,7 @@ nextname:
                     lfs_dir_find_match, &(struct lfs_dir_find_match){
                         lfs, name, namelen});
             if (tag < 0) {
+                LFS_TRACE("lfs_dir_find (fetchfail) -> %d", tag);
                 return tag;
             }
 
@@ -1181,6 +1195,7 @@ nextname:
             }
 
             if (!dir->split) {
+                LFS_TRACE("lfs_dir_find (noent) -> %d", tag);
                 return LFS_ERR_NOENT;
             }
         }
@@ -2009,6 +2024,7 @@ int lfs_mkdir(lfs_t *lfs, const char *path) {
 int lfs_dir_open(lfs_t *lfs, lfs_dir_t *dir, const char *path) {
     LFS_TRACE("lfs_dir_open(%p, %p, \"%s\")", (void*)lfs, (void*)dir, path);
     lfs_stag_t tag = lfs_dir_find(lfs, &dir->m, &path, NULL);
+    LFS_TRACE("lfs_dir_open");
     if (tag < 0) {
         LFS_TRACE("lfs_dir_open -> %"PRId32, tag);
         return tag;
@@ -2075,6 +2091,7 @@ int lfs_dir_read(lfs_t *lfs, lfs_dir_t *dir, struct lfs_info *info) {
     LFS_TRACE("lfs_dir_read(%p, %p, %p)",
             (void*)lfs, (void*)dir, (void*)info);
     memset(info, 0, sizeof(*info));
+    LFS_TRACE("lfs_dir_read -> after memset %d", sizeof(*info));
 
     // special offset for '.' and '..'
     if (dir->pos == 0) {
@@ -2090,8 +2107,10 @@ int lfs_dir_read(lfs_t *lfs, lfs_dir_t *dir, struct lfs_info *info) {
         LFS_TRACE("lfs_dir_read -> %d", true);
         return true;
     }
+    LFS_TRACE("lfs_dir_read -> after base");
 
     while (true) {
+        LFS_TRACE("lfs_dir_read -> loop");
         if (dir->id == dir->m.count) {
             if (!dir->m.split) {
                 LFS_TRACE("lfs_dir_read -> %d", false);
@@ -2653,6 +2672,7 @@ static int lfs_file_outline(lfs_t *lfs, lfs_file_t *file) {
 }
 
 static int lfs_file_flush(lfs_t *lfs, lfs_file_t *file) {
+    LFS_TRACE("lfs_file_flush(%p %p)", lfs, file);
     LFS_ASSERT(file->flags & LFS_F_OPENED);
 
     if (file->flags & LFS_F_READING) {
@@ -2675,17 +2695,20 @@ static int lfs_file_flush(lfs_t *lfs, lfs_file_t *file) {
                 .cache = lfs->rcache,
             };
             lfs_cache_drop(lfs, &lfs->rcache);
+            LFS_TRACE("lfs_file_flush");
 
             while (file->pos < file->ctz.size) {
                 // copy over a byte at a time, leave it up to caching
                 // to make this efficient
                 uint8_t data;
                 lfs_ssize_t res = lfs_file_read(lfs, &orig, &data, 1);
+                LFS_TRACE("lfs_file_flush");
                 if (res < 0) {
                     return res;
                 }
 
                 res = lfs_file_write(lfs, file, &data, 1);
+                LFS_TRACE("lfs_file_flush");
                 if (res < 0) {
                     return res;
                 }

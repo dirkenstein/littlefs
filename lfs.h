@@ -11,7 +11,7 @@
 #include <stdbool.h>
 
 #define LFS_NAME_MAX 32
-#define LFS_YES_TRACE
+//#define LFS_YES_TRACE
 
 #ifdef __cplusplus
 extern "C"
